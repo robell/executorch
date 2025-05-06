@@ -15,7 +15,7 @@
 
 namespace vkcompute {
 
-void check_q_8w_linear_args(
+void check_linear_qcsnw_args(
     const ComputeGraph& graph,
     const ValueRef mat1,
     const ValueRef qmat2_data,
@@ -37,7 +37,7 @@ void check_q_8w_linear_args(
       utils::val_at(-1, scales_sizes) == utils::val_at(-2, qmat2_sizes));
 }
 
-void resize_q_8w_linear_node(
+void resize_linear_qcs8w_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
@@ -64,7 +64,7 @@ void resize_q_8w_linear_node(
   out->virtual_resize(new_out_sizes);
 }
 
-void add_q_8w_linear_node(
+void add_linear_qcs8w_node(
     ComputeGraph& graph,
     const ValueRef mat1,
     const ValueRef q_mat2_data,
@@ -91,7 +91,7 @@ void add_q_8w_linear_node(
   ValueRef scales = prepack_standard(
       graph, scales_data, graph.storage_type_of(out), utils::kWidthPacked);
 
-  std::string kernel_name = "q_8w_linear";
+  std::string kernel_name = "linear_qcs8w";
   kernel_name.reserve(kShaderNameReserve);
   add_packed_dim_suffix(kernel_name, graph.packed_dim_of(mat1_W_packed));
   add_packed_dim_suffix(kernel_name, graph.packed_dim_of(q_mat2));
@@ -128,19 +128,21 @@ void add_q_8w_linear_node(
        {{mat1_W_packed, q_mat2, scales}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {},
+      // Push Constants
+      pcs,
       // Specialization Constants
       {},
-      // Resizing Logic
-      resize_q_8w_linear_node,
+      // Resize Args
       {},
-      pcs));
+      // Resizing Logic
+      resize_linear_qcs8w_node));
   if (!graph.is_buffer_storage(out) &&
       graph.packed_dim_of(out) != WHCN::kWidthDim) {
     viewFn(graph, {out_W_packed, graph.add_none(), out});
   }
 }
 
-void add_q_8w_linear_tiled_node(
+void add_linear_qcs8w_tiled_node(
     ComputeGraph& graph,
     const bool use_coop_algorithm,
     const ValueRef mat1,
@@ -170,7 +172,7 @@ void add_q_8w_linear_tiled_node(
       prepack_standard(graph, scales_data, scales_storage, utils::kWidthPacked);
 
   std::string kernel_name =
-      use_coop_algorithm ? "q_8w_linear_coop" : "q_8w_linear_tiled";
+      use_coop_algorithm ? "linear_qcs8w_coop" : "linear_qcs8w_tiled";
   kernel_name.reserve(kShaderNameReserve);
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(mat1));
@@ -215,13 +217,14 @@ void add_q_8w_linear_tiled_node(
       {{out, vkapi::kWrite}, {{mat1, q_mat2, scales}, vkapi::kRead}},
       // Shader params buffers
       {},
+      // Push Constants
+      {{graph.sizes_pc_of(out), graph.sizes_pc_of(mat1)}},
       // Specialization Constants
       {},
-      // Resizing Logic
-      resize_q_8w_linear_node,
+      // Resize Args
       {},
-      // Push Constants
-      {{graph.sizes_pc_of(out), graph.sizes_pc_of(mat1)}}));
+      // Resizing Logic
+      resize_linear_qcs8w_node));
 }
 
 bool can_use_tiled_impl(
@@ -280,13 +283,13 @@ bool can_use_coop_impl(ComputeGraph& graph, const ValueRef mat1) {
 void weight_int8pack_mm(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
-  check_q_8w_linear_args(graph, args[0], args[1], args[2], args[3]);
+  check_linear_qcsnw_args(graph, args[0], args[1], args[2], args[3]);
   if (can_use_tiled_impl(graph, args[0], args[1], args[2], args[3])) {
     bool use_coop_algorithm = can_use_coop_impl(graph, args[0]);
-    return add_q_8w_linear_tiled_node(
+    return add_linear_qcs8w_tiled_node(
         graph, use_coop_algorithm, args[0], args[1], args[2], args[3]);
   }
-  return add_q_8w_linear_node(graph, args[0], args[1], args[2], args[3]);
+  return add_linear_qcs8w_node(graph, args[0], args[1], args[2], args[3]);
 }
 
 REGISTER_OPERATORS {
